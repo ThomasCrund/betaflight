@@ -47,6 +47,7 @@
 
 #include "flight/alt_hold.h"
 #include "flight/autopilot.h"
+#include "flight/balance.h"
 #include "flight/failsafe.h"
 #include "flight/gps_rescue.h"
 #include "flight/imu.h"
@@ -400,6 +401,74 @@ static bool applyCrashFlipModeToMotors(void)
     return true;
 }
 
+static bool balanceMotorAllocationSupported(void)
+{
+    // DroneCAN currently has no 3D/reverse endpoint support.
+    if (!mixerRuntime.feature3dEnabled || isMotorProtocolDronecan()
+        || mixerRuntime.motorCount != QUAD_MOTOR_COUNT) {
+        return false;
+    }
+
+    int positivePitchMotors = 0;
+    int negativePitchMotors = 0;
+    int positiveRollMotors = 0;
+    int negativeRollMotors = 0;
+    for (int i = 0; i < mixerRuntime.motorCount; i++) {
+        if (mixerRuntime.currentMixer[i].pitch > 0.0f) {
+            positivePitchMotors++;
+        } else if (mixerRuntime.currentMixer[i].pitch < 0.0f) {
+            negativePitchMotors++;
+        }
+
+        if (mixerRuntime.currentMixer[i].roll > 0.0f) {
+            positiveRollMotors++;
+        } else if (mixerRuntime.currentMixer[i].roll < 0.0f) {
+            negativeRollMotors++;
+        }
+    }
+
+    // Four-edge selection requires a quad with a two-motor pair on each side
+    // of both the pitch and roll axes.
+    return positivePitchMotors == 2 && negativePitchMotors == 2
+        && positiveRollMotors == 2 && negativeRollMotors == 2;
+}
+
+static bool applyBalanceModeToMotors(void)
+{
+    if (!balanceModeUpdate(balanceMotorAllocationSupported())) {
+        return false;
+    }
+
+    // The normal flight PID still runs while this experimental output path is
+    // selected. Keep its I terms empty so returning to flight control is clean.
+    pidResetIterm();
+
+    const float effort = balanceModeGetOutput();
+    const float targetAngle = balanceModeGetTargetAngle();
+    const balanceAxis_e axis = balanceModeGetAxis();
+    const float lowerMotorScale = balanceConfig()->lowerMotorPercent * 0.01f;
+
+    for (int i = 0; i < mixerRuntime.motorCount; i++) {
+        const float axisCoefficient = axis == BALANCE_AXIS_ROLL
+            ? mixerRuntime.currentMixer[i].roll
+            : mixerRuntime.currentMixer[i].pitch;
+        const float signedDrive = balanceMotorDrive(
+            effort, axisCoefficient, targetAngle, lowerMotorScale);
+        motor[i] = balanceMotorOutput(
+            signedDrive,
+            mixerRuntime.disarmMotorOutput,
+            mixerRuntime.motorOutputLow,
+            mixerRuntime.motorOutputHigh,
+            mixerRuntime.deadbandMotor3dLow,
+            mixerRuntime.deadbandMotor3dHigh,
+            isMotorProtocolDshot());
+    }
+
+    motorMixRange = fabsf(effort);
+    mixerThrottle = 0.0f;
+    return true;
+}
+
 #ifdef USE_RPM_LIMIT
 #define STICK_HIGH_DEADBAND 5    // deadband to make sure throttle cap can raise, even with maxcheck set around 2000
 static void applyRpmLimiter(mixerRuntime_t *mixer)
@@ -686,6 +755,9 @@ FAST_CODE_NOINLINE void mixTable(timeUs_t currentTimeUs)
         // if crash flip modeis being applied to the motors, mixing is done
 
 
+    }
+    if (applyBalanceModeToMotors()) {
+        return;
     }
 
     motorMixer_t * activeMixer = &mixerRuntime.currentMixer[0];

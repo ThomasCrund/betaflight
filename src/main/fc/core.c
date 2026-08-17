@@ -254,7 +254,8 @@ static bool accNeedsCalibration(void)
             isModeActivationConditionPresent(BOXGPSRESCUE) ||
             isModeActivationConditionPresent(BOXCAMSTAB) ||
             isModeActivationConditionPresent(BOXCALIB) ||
-            isModeActivationConditionPresent(BOXACROTRAINER)) {
+            isModeActivationConditionPresent(BOXACROTRAINER) ||
+            isModeActivationConditionPresent(BOXBALANCE)) {
 
             return true;
         }
@@ -877,6 +878,7 @@ bool processRx(timeUs_t currentTimeUs)
         && pidConfig()->runaway_takeoff_prevention
         && !runawayTakeoffCheckDisabled
         && !crashFlipModeActive
+        && !IS_RC_MODE_ACTIVE(BOXBALANCE)
         && !runawayTakeoffTemporarilyDisabled
         && !isFixedWing()) {
 
@@ -1223,7 +1225,8 @@ void processRxModes(timeUs_t currentTimeUs)
     }
 #endif
 
-    if (FLIGHT_MODE(ANGLE_MODE | ALT_HOLD_MODE | POS_HOLD_MODE | HORIZON_MODE)) {
+    if (FLIGHT_MODE(ANGLE_MODE | ALT_HOLD_MODE | POS_HOLD_MODE | HORIZON_MODE)
+        || IS_RC_MODE_ACTIVE(BOXBALANCE)) {
         LED1_ON;
         // increase frequency of attitude task to reduce drift when in angle or horizon mode
         rescheduleTask(TASK_ATTITUDE, TASK_PERIOD_HZ(acc.sampleRateHz / (float)imuConfig()->imu_process_denom));
@@ -1323,6 +1326,7 @@ static FAST_CODE_NOINLINE void subTaskPidController(timeUs_t currentTimeUs)
         && pidConfig()->runaway_takeoff_prevention
         && !runawayTakeoffCheckDisabled
         && !crashFlipModeActive
+        && !IS_RC_MODE_ACTIVE(BOXBALANCE)
         && !runawayTakeoffTemporarilyDisabled
         && !FLIGHT_MODE(GPS_RESCUE_MODE)   // disable Runaway Takeoff triggering if GPS Rescue is active
         // check that motors are running

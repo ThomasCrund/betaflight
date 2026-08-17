@@ -57,6 +57,7 @@
 #include "fc/rc_adjustments.h"
 #include "fc/rc_controls.h"
 
+#include "flight/balance.h"
 #include "flight/failsafe.h"
 #include "flight/gps_rescue.h"
 #include "flight/imu.h"
@@ -1251,6 +1252,22 @@ const clivalue_t valueTable[] = {
     { "acro_trainer_debug_axis",    VAR_UINT8  | PROFILE_VALUE | MODE_LOOKUP, .config.lookup = { TABLE_ACRO_TRAINER_DEBUG }, PG_PID_PROFILE, offsetof(pidProfile_t, acro_trainer_debug_axis) },
     { "acro_trainer_gain",          VAR_UINT8  | PROFILE_VALUE, .config.minmaxUnsigned = { 25, 255 }, PG_PID_PROFILE, offsetof(pidProfile_t, acro_trainer_gain) },
 #endif // USE_ACRO_TRAINER
+
+    { "balance_angle",               VAR_INT8   | MASTER_VALUE, .config.minmax = { -90, 90 }, PG_BALANCE_CONFIG, offsetof(balanceConfig_t, angle) },
+    { "balance_p_gain",              VAR_UINT8  | MASTER_VALUE, .config.minmaxUnsigned = { 0, 200 }, PG_BALANCE_CONFIG, offsetof(balanceConfig_t, pGain) },
+    { "balance_d_gain",               VAR_UINT8  | MASTER_VALUE, .config.minmaxUnsigned = { 1, 200 }, PG_BALANCE_CONFIG, offsetof(balanceConfig_t, dGain) },
+    { "balance_max_rate",             VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 10, 500 }, PG_BALANCE_CONFIG, offsetof(balanceConfig_t, maxRate) },
+    { "balance_max_output_forward",   VAR_UINT8  | MASTER_VALUE, .config.minmaxUnsigned = { 1, 100 }, PG_BALANCE_CONFIG, offsetof(balanceConfig_t, maxOutputForward) },
+    { "balance_max_output_reverse",   VAR_UINT8  | MASTER_VALUE, .config.minmaxUnsigned = { 1, 100 }, PG_BALANCE_CONFIG, offsetof(balanceConfig_t, maxOutputReverse) },
+    { "balance_max_output_dynamic",   VAR_UINT8  | MASTER_VALUE, .config.minmaxUnsigned = { 1, 100 }, PG_BALANCE_CONFIG, offsetof(balanceConfig_t, maxOutputDynamic) },
+    { "balance_output_gain_forward",  VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 10, 500 }, PG_BALANCE_CONFIG, offsetof(balanceConfig_t, outputGainForward) },
+    { "balance_output_gain_reverse",  VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 10, 500 }, PG_BALANCE_CONFIG, offsetof(balanceConfig_t, outputGainReverse) },
+    { "balance_lower_motor_percent",  VAR_UINT8  | MASTER_VALUE, .config.minmaxUnsigned = { 0, 100 }, PG_BALANCE_CONFIG, offsetof(balanceConfig_t, lowerMotorPercent) },
+    { "balance_entry_angle",          VAR_UINT8  | MASTER_VALUE, .config.minmaxUnsigned = { 1, 45 }, PG_BALANCE_CONFIG, offsetof(balanceConfig_t, entryAngle) },
+    { "balance_entry_rate",           VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 1, 500 }, PG_BALANCE_CONFIG, offsetof(balanceConfig_t, entryRate) },
+    { "balance_entry_throttle",       VAR_UINT8  | MASTER_VALUE, .config.minmaxUnsigned = { 0, 25 }, PG_BALANCE_CONFIG, offsetof(balanceConfig_t, entryThrottle) },
+    { "balance_recovery_angle",       VAR_UINT8  | MASTER_VALUE, .config.minmaxUnsigned = { 1, 90 }, PG_BALANCE_CONFIG, offsetof(balanceConfig_t, recoveryAngle) },
+    { "balance_recovery_rate",        VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 0, 500 }, PG_BALANCE_CONFIG, offsetof(balanceConfig_t, recoveryRate) },
 
     { "p_pitch",                    VAR_UINT8  | PROFILE_VALUE, .config.minmaxUnsigned = { 0, PID_GAIN_MAX }, PG_PID_PROFILE, offsetof(pidProfile_t, pid[PID_PITCH].P) },
     { "i_pitch",                    VAR_UINT8  | PROFILE_VALUE, .config.minmaxUnsigned = { 0, PID_GAIN_MAX }, PG_PID_PROFILE, offsetof(pidProfile_t, pid[PID_PITCH].I) },
