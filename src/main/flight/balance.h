@@ -31,6 +31,13 @@ typedef struct balanceOrientation_s {
     bool fromFlat;
 } balanceOrientation_t;
 
+typedef struct balanceRecoveryTracker_s {
+    float bestError;
+    float stalledTime;
+    float cooldownTime;
+    bool tracking;
+} balanceRecoveryTracker_t;
+
 typedef struct balanceConfig_s {
     int8_t angle;                       // target magnitude; sign selects the default pitch edge from flat
     uint8_t pGain;                      // output fraction per degree of angle error, x1000
@@ -38,15 +45,27 @@ typedef struct balanceConfig_s {
     uint16_t maxRate;                   // maximum commanded selected-axis rate, degrees/second
     uint8_t maxOutputForward;           // maximum upper-pair forward 3D output, percent
     uint8_t maxOutputReverse;           // maximum upper-pair reverse 3D output, percent
-    uint8_t maxOutputDynamic;           // maximum output while moving or near the target, percent
+    uint8_t maxOutputDynamicForward;    // forward output limit while moving or near the target, percent
+    uint8_t maxOutputDynamicReverse;    // reverse output limit while moving or near the target, percent
     uint16_t outputGainForward;         // forward controller-effort multiplier, percent
     uint16_t outputGainReverse;         // reverse controller-effort multiplier, percent
+    uint8_t iGain;                      // near-target integral output per degree-second, x1000
+    uint8_t iLimit;                     // absolute integral output limit, percent
+    uint8_t iZone;                      // maximum error at which the integral may grow, degrees
+    uint16_t iRate;                     // maximum rate at which the integral may grow, degrees/second
     uint8_t lowerMotorPercent;          // lower motor effort as a percentage of upper motor effort
     uint8_t entryAngle;                 // flat detection threshold used when choosing the default edge, degrees
     uint16_t entryRate;                 // maximum selected-axis rate allowed when engaging, degrees/second
     uint8_t entryThrottle;              // maximum absolute 3D throttle allowed when engaging, percent
     uint8_t recoveryAngle;              // full static recovery output is allowed beyond this error, degrees
     uint16_t recoveryRate;              // maximum rate considered static for full recovery output, degrees/second
+    uint8_t recoveryMinProgress;        // improvement required to reset the no-progress timer, degrees
+    uint16_t recoveryTimeoutMs;         // time without progress before limiting recovery output
+    uint16_t recoveryCooldownMs;        // limited-output time before automatically retrying recovery
+    uint8_t recoveryOutputLimit;        // output limit during a no-progress cooldown, percent
+    uint8_t backAngle;                  // selected-axis angle treated as resting on the back, degrees
+    uint8_t backOutputLimit;            // output limit while resting near the back, percent
+    uint16_t startupRampMs;             // controller output soft-start duration after activation
 } balanceConfig_t;
 
 PG_DECLARE(balanceConfig_t, balanceConfig);
@@ -70,9 +89,21 @@ balanceOrientation_t balanceSelectOrientation(float pitchAngle, float rollAngle,
 float balanceDesiredRate(float angleError, float pGain, float dGain, float maxRate);
 float balanceControllerOutput(float targetAngle, float currentAngle, float pitchRate,
     float pGain, float dGain, float maxRate,
-    float maxOutputForward, float maxOutputReverse, float maxOutputDynamic,
+    float maxOutputForward, float maxOutputReverse,
+    float maxOutputDynamicForward, float maxOutputDynamicReverse,
     float outputGainForward, float outputGainReverse,
-    float recoveryAngle, float recoveryRate);
+    float recoveryAngle, float recoveryRate,
+    float integralOutput, float temporaryOutputLimit);
+float balanceIntegralUpdate(float integralOutput, float angleError, float rate,
+    float iGain, float iLimit, float iZone, float iRate, float dt, bool enabled,
+    bool reset);
+bool balanceLaunchCompleteUpdate(bool launchComplete, float absoluteError,
+    float targetZone);
+void balanceRecoveryTrackerReset(balanceRecoveryTracker_t *tracker);
+bool balanceRecoveryTrackerUpdate(balanceRecoveryTracker_t *tracker,
+    float absoluteError, bool active, float recoveryAngle, float minimumProgress,
+    float timeout, float cooldown, float dt);
+float balanceSoftStartScale(float activeTime, float rampTime);
 balanceState_e balanceControllerNextState(balanceState_e state, bool requested,
     bool hardwareReady, bool entryAllowed);
 float balanceMotorDrive(float effort, float axisCoefficient, float targetAngle,

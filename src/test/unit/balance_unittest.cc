@@ -87,69 +87,193 @@ TEST(BalanceControlTest, DesiredRateLimitsLargeAngleSteps)
 TEST(BalanceControlTest, ControllerCombinesAngleAndRateFeedback)
 {
     EXPECT_NEAR(0.04f, balanceControllerOutput(81.0f, 79.0f, 0.0f,
-        0.02f, 0.003f, 80.0f, 0.25f, 0.35f, 0.20f,
-        1.0f, 1.7f, 45.0f, 30.0f), 0.0001f);
+        0.02f, 0.003f, 80.0f, 0.25f, 0.35f, 0.20f, 0.20f,
+        1.0f, 1.7f, 45.0f, 30.0f, 0.0f, 1.0f), 0.0001f);
     EXPECT_NEAR(0.01f, balanceControllerOutput(81.0f, 79.0f, 10.0f,
-        0.02f, 0.003f, 80.0f, 0.25f, 0.35f, 0.20f,
-        1.0f, 1.7f, 45.0f, 30.0f), 0.0001f);
+        0.02f, 0.003f, 80.0f, 0.25f, 0.35f, 0.20f, 0.20f,
+        1.0f, 1.7f, 45.0f, 30.0f, 0.0f, 1.0f), 0.0001f);
 }
 
 TEST(BalanceControlTest, ControllerClampsByUpperPairThrustDirection)
 {
     EXPECT_FLOAT_EQ(0.25f, balanceControllerOutput(81.0f, 60.0f, 0.0f,
-        0.02f, 0.003f, 500.0f, 0.25f, 0.35f, 0.20f,
-        1.0f, 1.7f, 10.0f, 30.0f));
+        0.02f, 0.003f, 500.0f, 0.25f, 0.35f, 0.20f, 0.20f,
+        1.0f, 1.7f, 10.0f, 30.0f, 0.0f, 1.0f));
     EXPECT_FLOAT_EQ(-0.35f, balanceControllerOutput(81.0f, 100.0f, 0.0f,
-        0.02f, 0.003f, 500.0f, 0.25f, 0.35f, 0.20f,
-        1.0f, 1.7f, 10.0f, 30.0f));
+        0.02f, 0.003f, 500.0f, 0.25f, 0.35f, 0.20f, 0.20f,
+        1.0f, 1.7f, 10.0f, 30.0f, 0.0f, 1.0f));
 
     // The same physical thrust limits still apply when balancing on the
     // opposite edge, where controller-effort signs are reversed.
     EXPECT_FLOAT_EQ(-0.25f, balanceControllerOutput(-81.0f, -60.0f, 0.0f,
-        0.02f, 0.003f, 500.0f, 0.25f, 0.35f, 0.20f,
-        1.0f, 1.7f, 10.0f, 30.0f));
+        0.02f, 0.003f, 500.0f, 0.25f, 0.35f, 0.20f, 0.20f,
+        1.0f, 1.7f, 10.0f, 30.0f, 0.0f, 1.0f));
     EXPECT_FLOAT_EQ(0.35f, balanceControllerOutput(-81.0f, -100.0f, 0.0f,
-        0.02f, 0.003f, 500.0f, 0.25f, 0.35f, 0.20f,
-        1.0f, 1.7f, 10.0f, 30.0f));
+        0.02f, 0.003f, 500.0f, 0.25f, 0.35f, 0.20f, 0.20f,
+        1.0f, 1.7f, 10.0f, 30.0f, 0.0f, 1.0f));
 }
 
 TEST(BalanceControlTest, ControllerScalesEffortByUpperPairThrustDirection)
 {
     EXPECT_NEAR(-0.034f, balanceControllerOutput(81.0f, 82.0f, 0.0f,
-        0.02f, 0.003f, 80.0f, 0.25f, 0.35f, 0.20f,
-        1.0f, 1.7f, 45.0f, 30.0f), 0.0001f);
+        0.02f, 0.003f, 80.0f, 0.25f, 0.35f, 0.20f, 0.20f,
+        1.0f, 1.7f, 45.0f, 30.0f, 0.0f, 1.0f), 0.0001f);
     EXPECT_NEAR(0.034f, balanceControllerOutput(-81.0f, -82.0f, 0.0f,
-        0.02f, 0.003f, 80.0f, 0.25f, 0.35f, 0.20f,
-        1.0f, 1.7f, 45.0f, 30.0f), 0.0001f);
+        0.02f, 0.003f, 80.0f, 0.25f, 0.35f, 0.20f, 0.20f,
+        1.0f, 1.7f, 45.0f, 30.0f, 0.0f, 1.0f), 0.0001f);
 }
 
-TEST(BalanceControlTest, DynamicMotionUsesReducedOutputLimit)
+TEST(BalanceControlTest, DynamicMotionPreservesDirectionalOutputLimits)
 {
-    EXPECT_FLOAT_EQ(-0.40f, balanceControllerOutput(90.0f, 70.0f, 120.0f,
-        0.012f, 0.003f, 80.0f, 0.35f, 1.0f, 0.40f,
-        2.0f, 4.0f, 45.0f, 30.0f));
+    EXPECT_FLOAT_EQ(-0.60f, balanceControllerOutput(90.0f, 70.0f, 150.0f,
+        0.012f, 0.003f, 80.0f, 0.35f, 1.0f, 0.25f, 0.60f,
+        2.0f, 4.0f, 45.0f, 30.0f, 0.0f, 1.0f));
+    EXPECT_FLOAT_EQ(0.25f, balanceControllerOutput(90.0f, 70.0f, -120.0f,
+        0.012f, 0.003f, 80.0f, 0.35f, 1.0f, 0.25f, 0.60f,
+        2.0f, 4.0f, 45.0f, 30.0f, 0.0f, 1.0f));
+
+    // Physical thrust direction, rather than controller sign, selects the
+    // limit on the opposite edge too.
+    EXPECT_FLOAT_EQ(0.60f, balanceControllerOutput(-90.0f, -70.0f, -150.0f,
+        0.012f, 0.003f, 80.0f, 0.35f, 1.0f, 0.25f, 0.60f,
+        2.0f, 4.0f, 45.0f, 30.0f, 0.0f, 1.0f));
+    EXPECT_FLOAT_EQ(-0.25f, balanceControllerOutput(-90.0f, -70.0f, 120.0f,
+        0.012f, 0.003f, 80.0f, 0.35f, 1.0f, 0.25f, 0.60f,
+        2.0f, 4.0f, 45.0f, 30.0f, 0.0f, 1.0f));
 
     // Far from the target and nearly stationary, full directional recovery
     // authority remains available.
     EXPECT_FLOAT_EQ(0.35f, balanceControllerOutput(90.0f, 20.0f, 0.0f,
-        0.012f, 0.004f, 80.0f, 0.35f, 1.0f, 0.40f,
-        2.0f, 4.0f, 45.0f, 30.0f));
+        0.012f, 0.004f, 80.0f, 0.35f, 1.0f, 0.25f, 0.60f,
+        2.0f, 4.0f, 45.0f, 30.0f, 0.0f, 1.0f));
     EXPECT_FLOAT_EQ(-1.0f, balanceControllerOutput(90.0f, 150.0f, 0.0f,
-        0.012f, 0.004f, 80.0f, 0.35f, 1.0f, 0.40f,
-        2.0f, 4.0f, 45.0f, 30.0f));
+        0.012f, 0.004f, 80.0f, 0.35f, 1.0f, 0.25f, 0.60f,
+        2.0f, 4.0f, 45.0f, 30.0f, 0.0f, 1.0f));
 }
 
-TEST(BalanceControlTest, FloorAndIntermediateStartsUseLaunchPowerUntilRateTarget)
+TEST(BalanceControlTest, TemporaryLimitCapsBackAndCooldownOutput)
+{
+    EXPECT_FLOAT_EQ(-0.25f, balanceControllerOutput(90.0f, 170.0f, 0.0f,
+        0.012f, 0.003f, 80.0f, 0.35f, 1.0f, 0.25f, 0.60f,
+        2.0f, 4.0f, 45.0f, 30.0f, 0.0f, 0.25f));
+    EXPECT_FLOAT_EQ(0.25f, balanceControllerOutput(-90.0f, -170.0f, 0.0f,
+        0.012f, 0.003f, 80.0f, 0.35f, 1.0f, 0.25f, 0.60f,
+        2.0f, 4.0f, 45.0f, 30.0f, 0.0f, 0.25f));
+}
+
+TEST(BalanceControlTest, FloorUsesLaunchPowerAndIntermediateUsesDynamicLimit)
 {
     EXPECT_FLOAT_EQ(0.35f, balanceControllerOutput(90.0f, 0.0f, 0.0f,
-        0.012f, 0.003f, 80.0f, 0.35f, 1.0f, 0.40f,
-        2.0f, 4.0f, 45.0f, 30.0f));
-    EXPECT_FLOAT_EQ(0.35f, balanceControllerOutput(90.0f, 45.0f, 0.0f,
-        0.012f, 0.003f, 80.0f, 0.35f, 1.0f, 0.40f,
-        2.0f, 4.0f, 45.0f, 30.0f));
+        0.012f, 0.003f, 80.0f, 0.35f, 1.0f, 0.25f, 0.60f,
+        2.0f, 4.0f, 45.0f, 30.0f, 0.0f, 1.0f));
+    EXPECT_FLOAT_EQ(0.25f, balanceControllerOutput(90.0f, 45.0f, 0.0f,
+        0.012f, 0.003f, 80.0f, 0.35f, 1.0f, 0.25f, 0.60f,
+        2.0f, 4.0f, 45.0f, 30.0f, 0.0f, 1.0f));
     EXPECT_FLOAT_EQ(0.0f, balanceControllerOutput(90.0f, 45.0f, 80.0f,
-        0.012f, 0.003f, 80.0f, 0.35f, 1.0f, 0.40f,
-        2.0f, 4.0f, 45.0f, 30.0f));
+        0.012f, 0.003f, 80.0f, 0.35f, 1.0f, 0.25f, 0.60f,
+        2.0f, 4.0f, 45.0f, 30.0f, 0.0f, 1.0f));
+}
+
+TEST(BalanceControlTest, IntegralLearnsOnlyNearTargetAndCannotWindUp)
+{
+    float integral = 0.0f;
+    for (int i = 0; i < 1000; i++) {
+        integral = balanceIntegralUpdate(integral, -5.0f, 0.0f,
+            0.005f, 0.30f, 15.0f, 30.0f, 0.001f, true, false);
+    }
+    EXPECT_NEAR(-0.025f, integral, 0.0001f);
+
+    EXPECT_FLOAT_EQ(integral, balanceIntegralUpdate(integral, -20.0f, 0.0f,
+        0.005f, 0.30f, 15.0f, 30.0f, 1.0f, true, false));
+    EXPECT_FLOAT_EQ(integral, balanceIntegralUpdate(integral, -5.0f, 40.0f,
+        0.005f, 0.30f, 15.0f, 30.0f, 1.0f, true, false));
+
+    integral = 0.0f;
+    for (int i = 0; i < 1000; i++) {
+        integral = balanceIntegralUpdate(integral, 15.0f, 0.0f,
+            0.050f, 0.30f, 15.0f, 30.0f, 0.01f, true, false);
+    }
+    EXPECT_FLOAT_EQ(0.30f, integral);
+    EXPECT_FLOAT_EQ(0.0f, balanceIntegralUpdate(integral, 0.0f, 0.0f,
+        0.005f, 0.30f, 15.0f, 30.0f, 0.001f, false, false));
+}
+
+TEST(BalanceControlTest, IntegralResetsWhenFrameReturnsFlat)
+{
+    EXPECT_FLOAT_EQ(0.0f, balanceIntegralUpdate(-0.161f, 90.0f, 0.0f,
+        0.005f, 0.30f, 15.0f, 30.0f, 0.001f, true, true));
+}
+
+TEST(BalanceControlTest, InitialLaunchMustReachNearTargetBeforeRecoveryTracking)
+{
+    balanceRecoveryTracker_t tracker = {};
+    bool launchComplete = false;
+
+    for (int i = 0; i < 20; i++) {
+        launchComplete = balanceLaunchCompleteUpdate(launchComplete, 90.0f, 15.0f);
+        EXPECT_FALSE(balanceRecoveryTrackerUpdate(&tracker,
+            90.0f, launchComplete, 45.0f, 5.0f, 1.0f, 0.5f, 0.1f));
+    }
+    EXPECT_FALSE(launchComplete);
+    EXPECT_FALSE(tracker.tracking);
+
+    launchComplete = balanceLaunchCompleteUpdate(launchComplete, 15.0f, 15.0f);
+    EXPECT_TRUE(launchComplete);
+    EXPECT_FALSE(balanceRecoveryTrackerUpdate(&tracker,
+        15.0f, launchComplete, 45.0f, 5.0f, 1.0f, 0.5f, 0.1f));
+
+    // Once reached, the latch stays set and a later fall starts recovery
+    // tracking normally.
+    launchComplete = balanceLaunchCompleteUpdate(launchComplete, 90.0f, 15.0f);
+    EXPECT_TRUE(launchComplete);
+    EXPECT_FALSE(balanceRecoveryTrackerUpdate(&tracker,
+        90.0f, launchComplete, 45.0f, 5.0f, 1.0f, 0.5f, 0.1f));
+    EXPECT_TRUE(tracker.tracking);
+}
+
+TEST(BalanceControlTest, RecoveryCooldownLimitsStalledAttemptsAndRetries)
+{
+    balanceRecoveryTracker_t tracker = {};
+
+    EXPECT_FALSE(balanceRecoveryTrackerUpdate(&tracker,
+        70.0f, true, 45.0f, 5.0f, 1.0f, 0.5f, 0.1f));
+    for (int i = 0; i < 9; i++) {
+        EXPECT_FALSE(balanceRecoveryTrackerUpdate(&tracker,
+            69.0f, true, 45.0f, 5.0f, 1.0f, 0.5f, 0.1f));
+    }
+    EXPECT_TRUE(balanceRecoveryTrackerUpdate(&tracker,
+        69.0f, true, 45.0f, 5.0f, 1.0f, 0.5f, 0.1f));
+    EXPECT_TRUE(balanceRecoveryTrackerUpdate(&tracker,
+        69.0f, true, 45.0f, 5.0f, 1.0f, 0.5f, 0.5f));
+    EXPECT_FALSE(balanceRecoveryTrackerUpdate(&tracker,
+        69.0f, true, 45.0f, 5.0f, 1.0f, 0.5f, 0.1f));
+
+    // Returning near the target clears a pending attempt immediately.
+    EXPECT_FALSE(balanceRecoveryTrackerUpdate(&tracker,
+        20.0f, true, 45.0f, 5.0f, 1.0f, 0.5f, 0.1f));
+    EXPECT_FALSE(tracker.tracking);
+}
+
+TEST(BalanceControlTest, RecoveryProgressRestartsTheTimeout)
+{
+    balanceRecoveryTracker_t tracker = {};
+    EXPECT_FALSE(balanceRecoveryTrackerUpdate(&tracker,
+        90.0f, true, 45.0f, 5.0f, 1.0f, 0.5f, 0.1f));
+    for (int i = 0; i < 8; i++) {
+        EXPECT_FALSE(balanceRecoveryTrackerUpdate(&tracker,
+            89.0f, true, 45.0f, 5.0f, 1.0f, 0.5f, 0.1f));
+    }
+    EXPECT_FALSE(balanceRecoveryTrackerUpdate(&tracker,
+        84.0f, true, 45.0f, 5.0f, 1.0f, 0.5f, 0.1f));
+    EXPECT_FLOAT_EQ(0.0f, tracker.stalledTime);
+}
+
+TEST(BalanceControlTest, SoftStartRampsControllerAuthority)
+{
+    EXPECT_FLOAT_EQ(0.0f, balanceSoftStartScale(0.0f, 0.3f));
+    EXPECT_FLOAT_EQ(0.5f, balanceSoftStartScale(0.15f, 0.3f));
+    EXPECT_FLOAT_EQ(1.0f, balanceSoftStartScale(0.3f, 0.3f));
+    EXPECT_FLOAT_EQ(1.0f, balanceSoftStartScale(1.0f, 0.0f));
 }
 
 TEST(BalanceControlTest, EntryFailureWaitsAndRetriesWithoutAuxCycle)
@@ -157,6 +281,17 @@ TEST(BalanceControlTest, EntryFailureWaitsAndRetriesWithoutAuxCycle)
     balanceState_e state = BALANCE_STATE_IDLE;
 
     state = balanceControllerNextState(state, true, true, false);
+    EXPECT_EQ(BALANCE_STATE_IDLE, state);
+
+    state = balanceControllerNextState(state, true, true, true);
+    EXPECT_EQ(BALANCE_STATE_ACTIVE, state);
+}
+
+TEST(BalanceControlTest, PreArmRequestWaitsInsteadOfLockingOut)
+{
+    balanceState_e state = BALANCE_STATE_IDLE;
+
+    state = balanceControllerNextState(state, true, false, true);
     EXPECT_EQ(BALANCE_STATE_IDLE, state);
 
     state = balanceControllerNextState(state, true, true, true);
@@ -172,9 +307,15 @@ TEST(BalanceControlTest, ActiveModeDoesNotHaveAnAngleAbort)
 
 TEST(BalanceControlTest, HardwareFailureStillLocksOutSafely)
 {
-    const balanceState_e state = balanceControllerNextState(
+    balanceState_e state = balanceControllerNextState(
         BALANCE_STATE_ACTIVE, true, false, true);
     EXPECT_EQ(BALANCE_STATE_LOCKED_OUT, state);
+
+    state = balanceControllerNextState(state, true, true, false);
+    EXPECT_EQ(BALANCE_STATE_LOCKED_OUT, state);
+
+    state = balanceControllerNextState(state, true, true, true);
+    EXPECT_EQ(BALANCE_STATE_ACTIVE, state);
 }
 
 TEST(BalanceControlTest, MotorDrivePrioritisesUpperPair)

@@ -24,6 +24,7 @@
 
 #include "flight/failsafe.h"
 #include "flight/imu.h"
+#include "flight/pid.h"
 
 #include "pg/pg.h"
 #include "pg/pg_ids.h"
@@ -35,7 +36,7 @@
 
 #define BALANCE_GAIN_SCALE 0.001f
 
-PG_REGISTER_WITH_RESET_TEMPLATE(balanceConfig_t, balanceConfig, PG_BALANCE_CONFIG, 3);
+PG_REGISTER_WITH_RESET_TEMPLATE(balanceConfig_t, balanceConfig, PG_BALANCE_CONFIG, 4);
 
 PG_RESET_TEMPLATE(balanceConfig_t, balanceConfig,
     .angle = 90,
@@ -44,15 +45,27 @@ PG_RESET_TEMPLATE(balanceConfig_t, balanceConfig,
     .maxRate = 80,
     .maxOutputForward = 35,
     .maxOutputReverse = 100,
-    .maxOutputDynamic = 40,
+    .maxOutputDynamicForward = 25,
+    .maxOutputDynamicReverse = 60,
     .outputGainForward = 200,
     .outputGainReverse = 400,
+    .iGain = 5,
+    .iLimit = 30,
+    .iZone = 15,
+    .iRate = 30,
     .lowerMotorPercent = 0,
     .entryAngle = 15,
     .entryRate = 100,
     .entryThrottle = 5,
     .recoveryAngle = 45,
-    .recoveryRate = 30
+    .recoveryRate = 30,
+    .recoveryMinProgress = 5,
+    .recoveryTimeoutMs = 1000,
+    .recoveryCooldownMs = 1000,
+    .recoveryOutputLimit = 25,
+    .backAngle = 135,
+    .backOutputLimit = 25,
+    .startupRampMs = 300
 );
 
 static FAST_DATA_ZERO_INIT balanceState_e balanceState;
@@ -61,6 +74,10 @@ static FAST_DATA_ZERO_INIT float balanceAngle;
 static FAST_DATA_ZERO_INIT float balanceTargetAngle;
 static FAST_DATA_ZERO_INIT balanceAxis_e balanceAxis;
 static FAST_DATA_ZERO_INIT bool balanceOrientationLatched;
+static FAST_DATA_ZERO_INIT float balanceIntegralOutput;
+static FAST_DATA_ZERO_INIT float balanceActiveTime;
+static FAST_DATA_ZERO_INIT balanceRecoveryTracker_t balanceRecoveryTracker;
+static FAST_DATA_ZERO_INIT bool balanceLaunchComplete;
 
 static bool balanceHardwareReady(bool motorAllocationSupported)
 {
@@ -71,7 +88,7 @@ static bool balanceHardwareReady(bool motorAllocationSupported)
         && !failsafeIsActive();
 }
 
-bool FAST_CODE balanceModeUpdate(bool motorAllocationSupported)
+bool balanceModeUpdate(bool motorAllocationSupported)
 {
     const bool requested = IS_RC_MODE_ACTIVE(BOXBALANCE);
     float pitchAngle = 0.0f;
@@ -110,10 +127,68 @@ bool FAST_CODE balanceModeUpdate(bool motorAllocationSupported)
     const bool entryAllowed = entryRate <= balanceConfig()->entryRate
         && calculateThrottlePercentAbs() <= balanceConfig()->entryThrottle;
 
+    const balanceState_e previousState = balanceState;
     balanceState = balanceControllerNextState(balanceState, requested,
         hardwareReady, entryAllowed);
 
+    const float dt = pidGetDT();
+    bool recoveryCooldown = false;
+    bool backLimited = false;
     if (balanceState == BALANCE_STATE_ACTIVE) {
+        if (previousState != BALANCE_STATE_ACTIVE) {
+            balanceIntegralOutput = 0.0f;
+            balanceActiveTime = 0.0f;
+            balanceRecoveryTrackerReset(&balanceRecoveryTracker);
+            balanceLaunchComplete = false;
+        }
+
+        balanceActiveTime += dt;
+        const float absoluteError = fabsf(angleError);
+        balanceLaunchComplete = balanceLaunchCompleteUpdate(
+            balanceLaunchComplete,
+            absoluteError,
+            balanceConfig()->iZone);
+
+        // A holding bias learned around vertical can point the wrong way after
+        // the frame falls. Clear it on the flat so the next launch gets the
+        // complete configured recovery authority.
+        const bool frameIsFlat = fabsf(pitchAngle) <= balanceConfig()->entryAngle
+            && fabsf(rollAngle) <= balanceConfig()->entryAngle;
+        balanceIntegralOutput = balanceIntegralUpdate(
+            balanceIntegralOutput,
+            angleError,
+            selectedRate,
+            balanceConfig()->iGain * BALANCE_GAIN_SCALE,
+            balanceConfig()->iLimit * 0.01f,
+            balanceConfig()->iZone,
+            balanceConfig()->iRate,
+            dt,
+            true,
+            frameIsFlat);
+
+        // Initial launch is intentionally uninterrupted. The no-progress
+        // watchdog becomes active only after this BALANCE activation has
+        // reached the near-target I zone at least once.
+        recoveryCooldown = balanceRecoveryTrackerUpdate(
+            &balanceRecoveryTracker,
+            absoluteError,
+            balanceLaunchComplete,
+            balanceConfig()->recoveryAngle,
+            balanceConfig()->recoveryMinProgress,
+            balanceConfig()->recoveryTimeoutMs * 0.001f,
+            balanceConfig()->recoveryCooldownMs * 0.001f,
+            dt);
+
+        float temporaryOutputLimit = 1.0f;
+        if (recoveryCooldown) {
+            temporaryOutputLimit = balanceConfig()->recoveryOutputLimit * 0.01f;
+        }
+        backLimited = fabsf(balanceAngle) >= balanceConfig()->backAngle;
+        if (backLimited) {
+            temporaryOutputLimit = MIN(temporaryOutputLimit,
+                balanceConfig()->backOutputLimit * 0.01f);
+        }
+
         balanceOutput = balanceControllerOutput(
             balanceTargetAngle,
             balanceAngle,
@@ -123,13 +198,23 @@ bool FAST_CODE balanceModeUpdate(bool motorAllocationSupported)
             balanceConfig()->maxRate,
             balanceConfig()->maxOutputForward * 0.01f,
             balanceConfig()->maxOutputReverse * 0.01f,
-            balanceConfig()->maxOutputDynamic * 0.01f,
+            balanceConfig()->maxOutputDynamicForward * 0.01f,
+            balanceConfig()->maxOutputDynamicReverse * 0.01f,
             balanceConfig()->outputGainForward * 0.01f,
             balanceConfig()->outputGainReverse * 0.01f,
             balanceConfig()->recoveryAngle,
-            balanceConfig()->recoveryRate);
+            balanceConfig()->recoveryRate,
+            balanceIntegralOutput,
+            temporaryOutputLimit);
+        balanceOutput *= balanceSoftStartScale(
+            balanceActiveTime,
+            balanceConfig()->startupRampMs * 0.001f);
     } else {
         balanceOutput = 0.0f;
+        balanceIntegralOutput = 0.0f;
+        balanceActiveTime = 0.0f;
+        balanceRecoveryTrackerReset(&balanceRecoveryTracker);
+        balanceLaunchComplete = false;
     }
 
     DEBUG_SET(DEBUG_BALANCE, 0, balanceState);
@@ -137,18 +222,18 @@ bool FAST_CODE balanceModeUpdate(bool motorAllocationSupported)
     DEBUG_SET(DEBUG_BALANCE, 2, lrintf(angleError * 10.0f));
     DEBUG_SET(DEBUG_BALANCE, 3, lrintf(selectedRate));
     DEBUG_SET(DEBUG_BALANCE, 4, lrintf(balanceOutput * 1000.0f));
-    DEBUG_SET(DEBUG_BALANCE, 5, requested);
+    // Bit 0: requested, bit 1: no-progress cooldown, bit 2: back-angle cap,
+    // bit 3: initial launch has not yet reached the near-target zone.
+    const bool initialLaunch = balanceState == BALANCE_STATE_ACTIVE && !balanceLaunchComplete;
+    DEBUG_SET(DEBUG_BALANCE, 5, requested | (recoveryCooldown << 1) | (backLimited << 2) | (initialLaunch << 3));
     int orientationCode = balanceAxis == BALANCE_AXIS_ROLL ? 2 : 1;
     if (balanceTargetAngle < 0.0f) {
         orientationCode = -orientationCode;
     }
     DEBUG_SET(DEBUG_BALANCE, 6, hardwareReady ? orientationCode : 0);
-    const float desiredRate = balanceDesiredRate(
-        angleError,
-        balanceConfig()->pGain * BALANCE_GAIN_SCALE,
-        balanceConfig()->dGain * BALANCE_GAIN_SCALE,
-        balanceConfig()->maxRate);
-    DEBUG_SET(DEBUG_BALANCE, 7, lrintf(desiredRate));
+    // Desired rate can be reconstructed from error/P/D/max-rate; log the new
+    // integral holding bias here instead so it can be tuned from Blackbox.
+    DEBUG_SET(DEBUG_BALANCE, 7, lrintf(balanceIntegralOutput * 1000.0f));
 
     return balanceState == BALANCE_STATE_ACTIVE;
 }

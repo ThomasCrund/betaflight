@@ -74,9 +74,11 @@ float balanceDesiredRate(float angleError, float pGain, float dGain, float maxRa
 
 float balanceControllerOutput(float targetAngle, float currentAngle, float pitchRate,
     float pGain, float dGain, float maxRate,
-    float maxOutputForward, float maxOutputReverse, float maxOutputDynamic,
+    float maxOutputForward, float maxOutputReverse,
+    float maxOutputDynamicForward, float maxOutputDynamicReverse,
     float outputGainForward, float outputGainReverse,
-    float recoveryAngle, float recoveryRate)
+    float recoveryAngle, float recoveryRate,
+    float integralOutput, float temporaryOutputLimit)
 {
     const float angleError = balanceAngleErrorDegrees(targetAngle, currentAngle);
     const float desiredRate = balanceDesiredRate(angleError, pGain, dGain, maxRate);
@@ -88,22 +90,112 @@ float balanceControllerOutput(float targetAngle, float currentAngle, float pitch
     const bool positiveEffortUsesForwardThrust = targetAngle >= 0.0f;
     const bool effortUsesForwardThrust = (unscaledOutput >= 0.0f) == positiveEffortUsesForwardThrust;
     const float outputGain = effortUsesForwardThrust ? outputGainForward : outputGainReverse;
-    const float output = unscaledOutput * outputGain;
-    float maxPositiveOutput = positiveEffortUsesForwardThrust ? maxOutputForward : maxOutputReverse;
-    float maxNegativeOutput = positiveEffortUsesForwardThrust ? maxOutputReverse : maxOutputForward;
+    const float output = unscaledOutput * outputGain + integralOutput;
+    float forwardLimit = maxOutputForward;
+    float reverseLimit = maxOutputReverse;
 
     // Full directional power is reserved for starting or recovering while the
-    // craft is nearly stationary and far from the target. During motion, or
-    // close to vertical, cap both directions to avoid the 25%/100% bang-bang
-    // reversals seen in the floor tests.
+    // craft is nearly stationary and far from the target. Preserve the
+    // physical forward/reverse asymmetry during motion: the logs showed that
+    // one shared cap removed the extra reverse braking authority exactly when
+    // a disturbance needed it.
     const bool dynamicControl = fabsf(angleError) <= recoveryAngle
         || fabsf(pitchRate) > recoveryRate;
     if (dynamicControl) {
-        maxPositiveOutput = MIN(maxPositiveOutput, maxOutputDynamic);
-        maxNegativeOutput = MIN(maxNegativeOutput, maxOutputDynamic);
+        forwardLimit = MIN(forwardLimit, maxOutputDynamicForward);
+        reverseLimit = MIN(reverseLimit, maxOutputDynamicReverse);
     }
 
+    forwardLimit = MIN(forwardLimit, temporaryOutputLimit);
+    reverseLimit = MIN(reverseLimit, temporaryOutputLimit);
+
+    const float maxPositiveOutput = positiveEffortUsesForwardThrust ? forwardLimit : reverseLimit;
+    const float maxNegativeOutput = positiveEffortUsesForwardThrust ? reverseLimit : forwardLimit;
+
     return constrainf(output, -maxNegativeOutput, maxPositiveOutput);
+}
+
+float balanceIntegralUpdate(float integralOutput, float angleError, float rate,
+    float iGain, float iLimit, float iZone, float iRate, float dt, bool enabled,
+    bool reset)
+{
+    if (!enabled || reset) {
+        return 0.0f;
+    }
+
+    // Only learn the static holding bias near the target and while the frame
+    // is moving slowly. Outside this window the integral is frozen, and the
+    // hard clamp is the anti-windup guard for prolonged contact or saturation.
+    if (dt > 0.0f && fabsf(angleError) <= iZone && fabsf(rate) <= iRate) {
+        integralOutput += angleError * iGain * dt;
+    }
+
+    return constrainf(integralOutput, -iLimit, iLimit);
+}
+
+bool balanceLaunchCompleteUpdate(bool launchComplete, float absoluteError,
+    float targetZone)
+{
+    return launchComplete || absoluteError <= targetZone;
+}
+
+void balanceRecoveryTrackerReset(balanceRecoveryTracker_t *tracker)
+{
+    tracker->bestError = 0.0f;
+    tracker->stalledTime = 0.0f;
+    tracker->cooldownTime = 0.0f;
+    tracker->tracking = false;
+}
+
+bool balanceRecoveryTrackerUpdate(balanceRecoveryTracker_t *tracker,
+    float absoluteError, bool active, float recoveryAngle, float minimumProgress,
+    float timeout, float cooldown, float dt)
+{
+    if (!active || absoluteError <= recoveryAngle) {
+        balanceRecoveryTrackerReset(tracker);
+        return false;
+    }
+
+    if (tracker->cooldownTime > 0.0f) {
+        tracker->cooldownTime = MAX(0.0f, tracker->cooldownTime - MAX(dt, 0.0f));
+        if (tracker->cooldownTime == 0.0f) {
+            tracker->bestError = absoluteError;
+            tracker->stalledTime = 0.0f;
+            tracker->tracking = true;
+        }
+        return true;
+    }
+
+    if (!tracker->tracking) {
+        tracker->bestError = absoluteError;
+        tracker->stalledTime = 0.0f;
+        tracker->tracking = true;
+        return false;
+    }
+
+    if (absoluteError <= tracker->bestError - minimumProgress) {
+        tracker->bestError = absoluteError;
+        tracker->stalledTime = 0.0f;
+    } else {
+        tracker->stalledTime += MAX(dt, 0.0f);
+    }
+
+    if (timeout > 0.0f && tracker->stalledTime >= timeout) {
+        tracker->cooldownTime = cooldown;
+        tracker->tracking = false;
+        return true;
+    }
+
+    return false;
+}
+
+float balanceSoftStartScale(float activeTime, float rampTime)
+{
+    if (rampTime <= 0.0f) {
+        return 1.0f;
+    }
+
+    return constrainf(activeTime / rampTime, 0.0f, 1.0f);
 }
 
 balanceState_e balanceControllerNextState(balanceState_e state, bool requested,
@@ -113,21 +205,20 @@ balanceState_e balanceControllerNextState(balanceState_e state, bool requested,
         return BALANCE_STATE_IDLE;
     }
 
-    if (!hardwareReady) {
-        return BALANCE_STATE_LOCKED_OUT;
-    }
-
     switch (state) {
     case BALANCE_STATE_IDLE:
-        // Wait for a safe rate/throttle without forcing the pilot to cycle AUX.
-        // Attitude is deliberately not an entry condition: an orientation is
-        // selected and latched at any angle, including approximately 45 degrees.
-        return entryAllowed ? BALANCE_STATE_ACTIVE : BALANCE_STATE_IDLE;
+        // A switch that is already high before arming waits here instead of
+        // permanently latching lockout. Attitude is deliberately not an entry
+        // condition, including at approximately 45 degrees.
+        return hardwareReady && entryAllowed ? BALANCE_STATE_ACTIVE : BALANCE_STATE_IDLE;
     case BALANCE_STATE_ACTIVE:
-        // Once active, angle alone never locks the mode out. This permits
-        // recovery through flat and from either side of the selected edge.
-        return BALANCE_STATE_ACTIVE;
+        // Once active, angle alone never locks the mode out. A real hardware
+        // or failsafe loss still moves to the safe state.
+        return hardwareReady ? BALANCE_STATE_ACTIVE : BALANCE_STATE_LOCKED_OUT;
     case BALANCE_STATE_LOCKED_OUT:
+        // Recover automatically only after hardware and the rate/throttle
+        // handover conditions are safe again.
+        return hardwareReady && entryAllowed ? BALANCE_STATE_ACTIVE : BALANCE_STATE_LOCKED_OUT;
     default:
         return BALANCE_STATE_LOCKED_OUT;
     }
