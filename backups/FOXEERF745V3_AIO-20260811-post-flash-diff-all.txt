@@ -1,0 +1,127 @@
+diff all
+
+# version
+# Betaflight / STM32F745 (F745) 2026.12.0-alpha Aug 11 2026 / 21:01:56 (norevision) MSP API: 1.48
+# config rev: 749fff1
+
+# start the command batch
+batch start
+
+# reset configuration to default settings
+defaults nosave
+
+board_name FOXEERF745V3_AIO
+manufacturer_id FOXE
+mcu_id 0034003d5030501620323530
+signature 
+
+# feature
+feature 3D
+feature OSD
+
+# serial
+serial UART2 131073 115200 57600 0 115200
+serial UART7 64 115200 57600 0 115200
+
+# aux
+aux 0 0 0 1700 2100 0 0
+
+# vtxtable
+vtxtable bands 6
+vtxtable channels 8
+vtxtable band 1 BOSCAM_A A FACTORY    0    0    0    0    0    0    0    0
+vtxtable band 2 BOSCAM_B B FACTORY    0    0    0    0    0    0    0    0
+vtxtable band 3 BOSCAM_E E FACTORY    0    0    0    0    0    0    0    0
+vtxtable band 4 FATSHARK F FACTORY    0 5760    0 5800    0    0    0    0
+vtxtable band 5 RACEBAND R FACTORY 5658 5695 5732 5769 5806 5843 5880 5917
+vtxtable band 6 IMD6     I FACTORY    0    0    0    0    0    0    0    0
+vtxtable powerlevels 3
+vtxtable powervalues 14 23 0
+vtxtable powerlabels 25 200 0
+
+# master
+set gyro_lpf1_static_hz = 150
+set gyro_lpf2_static_hz = 300
+set dyn_notch_count = 2
+set dyn_notch_max_hz = 750
+set gyro_lpf1_dyn_min_hz = 150
+set gyro_lpf1_dyn_max_hz = 300
+set acc_lpf_hz = 10
+set acc_calibration = 12,-8,-139,1
+set dshot_bidir = ON
+set motor_output_reordering = 2,3,0,1,4,5,6,7
+set align_board_roll = 180
+set align_board_yaw = -45
+set small_angle = 180
+set simplified_gyro_filter_multiplier = 60
+set osd_vbat_pos = 2565
+set osd_link_quality_pos = 3110
+set osd_vtx_channel_pos = 3142
+set osd_warnings_pos = 14741
+set osd_avg_cell_voltage_pos = 2533
+set vtx_band = 5
+set vtx_channel = 1
+set vtx_power = 1
+set vtx_freq = 5658
+set rpm_filter_harmonics = 2
+
+profile 0
+
+# profile 0
+set vbat_sag_compensation = 100
+set anti_gravity_gain = 90
+set iterm_relax_cutoff = 10
+set pidsum_limit = 1000
+set pidsum_limit_yaw = 1000
+set yaw_lowpass_hz = 125
+set p_pitch = 56
+set i_pitch = 50
+set d_pitch = 57
+set f_pitch = 194
+set p_roll = 53
+set i_roll = 47
+set d_roll = 50
+set f_roll = 187
+set p_yaw = 53
+set i_yaw = 47
+set f_yaw = 187
+set d_max_roll = 0
+set d_max_pitch = 0
+set dyn_idle_min_rpm = 35
+set simplified_master_multiplier = 120
+set simplified_i_gain = 50
+set simplified_d_gain = 140
+set simplified_feedforward_gain = 130
+
+profile 1
+
+profile 2
+
+profile 3
+
+# restore original profile selection
+profile 0
+
+rateprofile 0
+
+rateprofile 1
+
+rateprofile 2
+
+rateprofile 3
+
+battery_profile 0
+
+battery_profile 1
+
+battery_profile 2
+
+# restore original rateprofile selection
+rateprofile 0
+
+# restore original battery_profile selection
+battery_profile 0
+
+# save configuration
+save
+# 

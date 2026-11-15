@@ -134,6 +134,10 @@ battery_profile_unittest_SRC := \
 		$(USER_DIR)/common/streambuf.c \
 		$(USER_DIR)/pg/pg.c
 
+balance_unittest_SRC := \
+		$(USER_DIR)/common/maths.c \
+		$(USER_DIR)/flight/balance_control.c
+
 blackbox_unittest_SRC :=  \
 		$(USER_DIR)/blackbox/blackbox.c \
 		$(USER_DIR)/blackbox/blackbox_encoding.c \
